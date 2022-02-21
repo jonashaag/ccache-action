@@ -58265,27 +58265,31 @@ var cache = __nccwpck_require__(7799);
 
 
 
+const SELF_CI = external_process_namespaceObject.env.CCACHE_ACTION_CI === "true";
 // based on https://cristianadam.eu/20200113/speeding-up-c-plus-plus-github-actions-using-ccache/
 async function restore(ccacheVariant) {
-    let restoreKey = `${ccacheVariant}-`;
-    let inputKey = core.getInput("key");
-    if (inputKey) {
-        restoreKey += `${inputKey}-`;
-    }
-    const restoreKeys = [
-        restoreKey
-    ];
-    const key = restoreKey + new Date().toISOString();
-    const paths = [
-        `.${ccacheVariant}`
-    ];
-    core.saveState("primaryKey", key);
-    const restoredWith = await cache.restoreCache(paths, key, restoreKeys);
+    const inputs = {
+        primaryKey: core.getInput("key"),
+        // https://github.com/actions/cache/blob/73cb7e04054996a98d39095c0b7821a73fb5b3ea/src/utils/actionUtils.ts#L56
+        restoreKeys: core.getInput("restore-keys").split("\n").map(s => s.trim()).filter(x => x !== "")
+    };
+    const keyPrefix = ccacheVariant + "-";
+    const primaryKey = inputs.primaryKey ? keyPrefix + inputs.primaryKey + "-" : keyPrefix;
+    const restoreKeys = inputs.restoreKeys.map(k => keyPrefix + k + "-");
+    const paths = [`.${ccacheVariant}`];
+    core.saveState("primaryKey", primaryKey);
+    const restoredWith = await cache.restoreCache(paths, primaryKey, restoreKeys);
     if (restoredWith) {
         core.info(`Restored from cache key "${restoredWith}".`);
+        if (SELF_CI) {
+            core.setOutput("test-cache-hit", true);
+        }
     }
     else {
         core.info("No cache found.");
+        if (SELF_CI) {
+            core.setOutput("test-cache-hit", false);
+        }
     }
 }
 async function configure(ccacheVariant) {
@@ -58303,6 +58307,33 @@ async function configure(ccacheVariant) {
         const options = `SCCACHE_IDLE_TIMEOUT=999999 SCCACHE_DIR="${ghWorkSpace}"/.sccache SCCACHE_CACHE_SIZE="${maxSize}"`;
         await exec.exec(`env ${options} sccache --start-server`);
     }
+}
+async function installCcacheMac() {
+    await exec.exec("brew install ccache");
+}
+async function installCcacheLinux() {
+    await exec.exec("sudo apt-get install -y ccache");
+}
+async function installCcacheWindows() {
+    throw Error("Ccache is not available for Windows, use Sccache with 'sccache: true'");
+}
+async function installSccacheMac() {
+    await exec.exec("brew install sccache");
+}
+async function installSccacheLinux() {
+    await installSccacheFromGitHub("v0.2.15", "x86_64-unknown-linux-musl", "e5d03a9aa3b9fac7e490391bbe22d4f42c840d31ef9eaf127a03101930cbb7ca", "/usr/local/bin/", "sccache");
+}
+async function installSccacheWindows() {
+    await installSccacheFromGitHub("v0.2.15", "x86_64-pc-windows-msvc", "e5d03a9aa3b9fac7e490391bbe22d4f42c840d31ef9eaf127a03101930cbb7ca", 
+    // TODO find a better place
+    "C:\\Users\\runneradmin\\.cargo\\bin", "sccache.exe");
+}
+async function installSccacheFromGitHub(version, artifactName, sha256, binPath, binName) {
+    const archiveName = `sccache-${version}-${artifactName}`;
+    const url = `https://github.com/mozilla/sccache/releases/download/${version}/${archiveName}.tar.gz`;
+    await exec.exec("sh", ["-c", `curl -L '${url}' | tar xzf - -O '${archiveName}/${binName}' > '${binPath}/${binName}'`]);
+    await exec.exec(`echo "${sha256}  ${binPath}/${binName}" | sha256sum -c`);
+    await exec.exec(`chmod +x ${binPath}/${binName}`);
 }
 async function run() {
     try {
@@ -58334,33 +58365,6 @@ async function run() {
     catch (error) {
         core.setFailed(`Restoring cache failed: ${error}`);
     }
-}
-async function installCcacheMac() {
-    await exec.exec("brew install ccache");
-}
-async function installCcacheLinux() {
-    await exec.exec("sudo apt-get install -y ccache");
-}
-async function installCcacheWindows() {
-    throw Error("Ccache is not available for Windows, use Sccache with 'sccache: true'");
-}
-async function installSccacheMac() {
-    await exec.exec("brew install sccache");
-}
-async function installSccacheLinux() {
-    await installSccacheFromGitHub("v0.2.15", "x86_64-unknown-linux-musl", "e5d03a9aa3b9fac7e490391bbe22d4f42c840d31ef9eaf127a03101930cbb7ca", "/usr/local/bin/", "sccache");
-}
-async function installSccacheWindows() {
-    await installSccacheFromGitHub("v0.2.15", "x86_64-pc-windows-msvc", "e5d03a9aa3b9fac7e490391bbe22d4f42c840d31ef9eaf127a03101930cbb7ca", 
-    // TODO find a better place
-    "C:\\Users\\runneradmin\\.cargo\\bin", "sccache.exe");
-}
-async function installSccacheFromGitHub(version, artifactName, sha256, binPath, binName) {
-    const archiveName = `sccache-${version}-${artifactName}`;
-    const url = `https://github.com/mozilla/sccache/releases/download/${version}/${archiveName}.tar.gz`;
-    await exec.exec("sh", ["-c", `curl -L '${url}' | tar xzf - -O '${archiveName}/${binName}' > '${binPath}/${binName}'`]);
-    await exec.exec(`echo "${sha256}  ${binPath}/${binName}" | sha256sum -c`);
-    await exec.exec(`chmod +x ${binPath}/${binName}`);
 }
 run();
 /* harmony default export */ const src_restore = (run);

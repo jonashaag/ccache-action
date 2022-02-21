@@ -58266,33 +58266,20 @@ __nccwpck_require__.r(__webpack_exports__);
 
 
 
-async function run() {
-    try {
-        const ccacheVariant = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getState("ccacheVariant");
-        const primaryKey = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getState("primaryKey");
-        if (!ccacheVariant || !primaryKey) {
-            _actions_core__WEBPACK_IMPORTED_MODULE_0__.notice("ccache setup failed, skipping saving.");
-            return;
+async function ccacheIsEmpty(ccacheVariant, ccacheKnowsVerbosityFlag) {
+    if (ccacheVariant === "ccache") {
+        if (ccacheKnowsVerbosityFlag) {
+            return !!(await _actions_exec__WEBPACK_IMPORTED_MODULE_2__.getExecOutput("ccache -s -v")).stdout.match(/Files:.+0/);
         }
-        _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`${ccacheVariant} stats:`);
-        const verbosity = await getVerbosity(ccacheVariant, _actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput("verbose"));
-        await _actions_exec__WEBPACK_IMPORTED_MODULE_2__.exec(`${ccacheVariant} -s${verbosity}`);
-        const key = primaryKey + new Date().toISOString();
-        const paths = [
-            `.${ccacheVariant}`
-        ];
-        _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`Save cache using key "${key}".`);
-        await _actions_cache__WEBPACK_IMPORTED_MODULE_1__.saveCache(paths, key);
+        else {
+            return !!(await _actions_exec__WEBPACK_IMPORTED_MODULE_2__.getExecOutput("ccache -s")).stdout.match(/files in cache.+0/);
+        }
     }
-    catch (error) {
-        _actions_core__WEBPACK_IMPORTED_MODULE_0__.setFailed(`Saving cache failed: ${error}`);
+    else {
+        return !!(await _actions_exec__WEBPACK_IMPORTED_MODULE_2__.getExecOutput("sccache -s")).stdout.match(/Cache size.+0 bytes/);
     }
 }
-async function getVerbosity(ccacheVariant, verbositySetting) {
-    // Some versions of ccache do not support --verbose
-    if (!(await _actions_exec__WEBPACK_IMPORTED_MODULE_2__.getExecOutput(`${ccacheVariant} --help`)).stdout.includes("--verbose")) {
-        return '';
-    }
+async function getVerbosity(verbositySetting) {
     switch (verbositySetting) {
         case '0':
             return '';
@@ -58303,6 +58290,33 @@ async function getVerbosity(ccacheVariant, verbositySetting) {
         default:
             _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning(`Invalid value "${verbositySetting}" of "verbose" option ignored.`);
             return '';
+    }
+}
+async function run() {
+    try {
+        const ccacheVariant = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getState("ccacheVariant");
+        const primaryKey = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getState("primaryKey");
+        if (!ccacheVariant || !primaryKey) {
+            _actions_core__WEBPACK_IMPORTED_MODULE_0__.notice("ccache setup failed, skipping saving.");
+            return;
+        }
+        // Some versions of ccache do not support --verbose
+        const ccacheKnowsVerbosityFlag = !!(await _actions_exec__WEBPACK_IMPORTED_MODULE_2__.getExecOutput(`${ccacheVariant} --help`)).stdout.includes("--verbose");
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`${ccacheVariant} stats:`);
+        const verbosity = ccacheKnowsVerbosityFlag ? await getVerbosity(_actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput("verbose")) : '';
+        await _actions_exec__WEBPACK_IMPORTED_MODULE_2__.exec(`${ccacheVariant} -s${verbosity}`);
+        if (await ccacheIsEmpty(ccacheVariant, ccacheKnowsVerbosityFlag)) {
+            _actions_core__WEBPACK_IMPORTED_MODULE_0__.info("Not saving cache because no objects are cached.");
+        }
+        else {
+            const saveKey = primaryKey + new Date().toISOString();
+            const paths = [`.${ccacheVariant}`];
+            _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`Save cache using key "${saveKey}".`);
+            await _actions_cache__WEBPACK_IMPORTED_MODULE_1__.saveCache(paths, saveKey);
+        }
+    }
+    catch (error) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__.setFailed(`Saving cache failed: ${error}`);
     }
 }
 run();
